@@ -15,6 +15,7 @@ import {
   catalogKindLabels,
 } from "@/features/admin/presentation/admin/modules/catalog-editor-dialog";
 import { GourmetEditorDialog } from "@/features/admin/presentation/admin/modules/gourmet-editor-dialog";
+import { BottleCatalogModule } from "@/features/admin/presentation/admin/modules/bottle-catalog-module";
 import type {
   CatalogCombo,
   CatalogEditor,
@@ -30,7 +31,7 @@ type CatalogData = {
   rules: { key: string; value: unknown }[];
 };
 
-type CatalogTab = "items" | "combos" | "gourmet";
+type CatalogTab = "items" | "combos" | "gourmet" | "bottle";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -193,7 +194,9 @@ export function CatalogModule() {
       ? visibleItems.length
       : tab === "combos"
         ? visibleCombos.length
-        : visibleGourmets.length;
+        : tab === "gourmet"
+          ? visibleGourmets.length
+          : 0;
   const pageCount = Math.max(1, Math.ceil(totalForTab / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
@@ -247,7 +250,8 @@ export function CatalogModule() {
             [
               ["items", `Itens (${activeItemCount})`],
               ["combos", `Combos (${activeComboCount})`],
-                ["gourmet", `Gourmets (${activeGourmetCount})`],
+              ["gourmet", `Gourmets (${activeGourmetCount})`],
+              ["bottle", "Açaí na Garrafa"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -303,23 +307,25 @@ export function CatalogModule() {
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            onClick={() => {
-              if (tab === "items") openItemEditor();
-              else if (tab === "combos") openComboEditor();
-              else openGourmetEditor();
-            }}
-            disabled={loading || Boolean(mutating)}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#8b1a2e] px-4 text-sm font-extrabold text-white hover:bg-[#6b1222] disabled:opacity-50"
-          >
-            <PlusIcon aria-hidden="true" size={17} />
-            {tab === "items"
-              ? "Adicionar item"
-              : tab === "gourmet"
-                ? "Criar Gourmet"
-                : "Criar combo"}
-          </button>
+          {tab !== "bottle" && (
+            <button
+              type="button"
+              onClick={() => {
+                if (tab === "items") openItemEditor();
+                else if (tab === "combos") openComboEditor();
+                else openGourmetEditor();
+              }}
+              disabled={loading || Boolean(mutating)}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#8b1a2e] px-4 text-sm font-extrabold text-white hover:bg-[#6b1222] disabled:opacity-50"
+            >
+              <PlusIcon aria-hidden="true" size={17} />
+              {tab === "items"
+                ? "Adicionar item"
+                : tab === "gourmet"
+                  ? "Criar Gourmet"
+                  : "Criar combo"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -530,7 +536,7 @@ export function CatalogModule() {
           Nenhum combo cadastrado.
         </p>
         )
-      ) : (
+      ) : tab === "gourmet" ? (
         <GourmetCatalogTable
           gourmets={paginatedGourmets}
           mutating={mutating}
@@ -538,6 +544,8 @@ export function CatalogModule() {
           onToggle={toggleGourmet}
           onArchive={archiveGourmet}
         />
+      ) : (
+        <BottleCatalogModule />
       )}
 
       {!loading && totalForTab > 0 && (

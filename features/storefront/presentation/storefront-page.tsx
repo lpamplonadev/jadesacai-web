@@ -166,6 +166,10 @@ export default function Home() {
         {builderCatalog ? (
           <ProductCatalog
             catalog={builderCatalog}
+            bottleCatalog={
+              storeStatus?.settings.bottleCatalog ??
+              defaultStoreSettings.bottleCatalog
+            }
             combos={menuCombos}
             gourmets={menuGourmets}
             products={products}
@@ -191,6 +195,10 @@ export default function Home() {
             onClearProduct={() => setSelectedProduct(null)}
             onCartCountChange={setCartCount}
             catalog={builderCatalog}
+            bottleCatalog={
+              storeStatus?.settings.bottleCatalog ??
+              defaultStoreSettings.bottleCatalog
+            }
             deliveryZones={
               storeStatus?.settings.deliveryZones ??
               defaultStoreSettings.deliveryZones

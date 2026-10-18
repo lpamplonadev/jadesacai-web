@@ -6,6 +6,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import type { BuilderCatalogData } from "@/features/storefront/domain/acai-builder-data";
+import type { BottleCatalogSettings } from "@/shared/domain/store-settings";
 import type {
   MenuCombo,
   MenuGourmet,
@@ -16,6 +17,7 @@ import type {
 
 type ProductCatalogProps = {
   catalog: BuilderCatalogData;
+  bottleCatalog: BottleCatalogSettings;
   combos: MenuCombo[];
   gourmets: MenuGourmet[];
   products: Product[];
@@ -25,12 +27,12 @@ type ProductCatalogProps = {
   catalogError: boolean;
 };
 
-type ProductCategory = "all" | "custom" | "combo" | "gourmet";
+type ProductCategory = "all" | "custom" | "combo" | "gourmet" | "bottle";
 type SortOrder = "featured" | "price-asc" | "price-desc";
 
 type CatalogProduct = {
   id: string;
-  type: "custom" | "combo" | "gourmet";
+  type: "custom" | "combo" | "gourmet" | "bottle";
   name: string;
   description: string;
   details: string;
@@ -38,6 +40,7 @@ type CatalogProduct = {
   price: number;
   pricePrefix?: string;
   gourmetSizes?: MenuGourmetSize[];
+  bottleSizes?: MenuGourmetSize[];
   tag: string;
   image: string;
   imageAlt: string;
@@ -55,6 +58,7 @@ const filterInputClassName =
 
 export function ProductCatalog({
   catalog,
+  bottleCatalog,
   combos,
   gourmets,
   products,
@@ -87,6 +91,80 @@ export function ProductCatalog({
     online: "Cardápio atualizado",
     offline: "API indisponível",
   }[apiStatus];
+  const configuredBottles = bottleCatalog.bottles?.length
+    ? bottleCatalog.bottles
+    : bottleCatalog.enabled || bottleCatalog.price300Cents || bottleCatalog.price500Cents
+      ? [{
+          id: "bottle-acai",
+          name: "Açaí na Garrafa",
+          enabled: bottleCatalog.enabled,
+          price300Cents: bottleCatalog.price300Cents,
+          price500Cents: bottleCatalog.price500Cents,
+        }]
+      : [];
+  const bottleExtras = bottleCatalog.extras.filter((extra) => extra.enabled);
+  const bottleProducts: CatalogProduct[] = configuredBottles.flatMap(
+    (bottle, index) => {
+      if (!bottle.enabled) return [];
+      const bottleSizes: MenuGourmetSize[] = [
+        {
+          sizeId: catalog.cupSizes.find((size) => size.name === "300 ml")?.id ?? "",
+          size: "300 ml",
+          priceCents: bottle.price300Cents,
+        },
+        {
+          sizeId: catalog.cupSizes.find((size) => size.name === "500 ml")?.id ?? "",
+          size: "500 ml",
+          priceCents: bottle.price500Cents,
+        },
+      ].filter((size) => size.sizeId && size.priceCents > 0);
+      if (!bottleSizes.length) return [];
+      return [{
+        id: bottle.id,
+        type: "bottle" as const,
+        name: bottle.name,
+        description: "Escolha o sabor e adicione calda ou extras, se quiser.",
+        details:
+          "Escolha açaí de banana ou morango. Caldas e extras são opcionais; a garrafa não leva acompanhamentos ou frutas adicionais.",
+        highlights: [
+          "Açaí de banana ou morango",
+          "Caldas opcionais",
+          ...(bottleExtras.length
+            ? [`Extras opcionais: ${bottleExtras.map((extra) => extra.name).join(", ")}`]
+            : ["Sem extras disponíveis no momento"]),
+        ],
+        price: Math.min(...bottleSizes.map((size) => size.priceCents)) / 100,
+        pricePrefix: "A partir de",
+        bottleSizes,
+        tag: "Açaí na Garrafa",
+        image: products[0]?.image ?? "",
+        imageAlt: bottle.name,
+        rank: combos.length + gourmets.length + index,
+        choose: (sizeId?: string) => {
+          const size = bottleSizes.find((option) => option.sizeId === sizeId);
+          if (!size) return;
+          onChooseProduct({
+            type: "bottle",
+            id: bottle.id,
+            name: bottle.name,
+            sizeId: size.sizeId,
+            size: size.size,
+            priceCents: size.priceCents,
+            includedToppings: 0,
+            includedFruits: 0,
+            includedExtras: 0,
+            tag: "Açaí na Garrafa",
+            image: products[0]?.image ?? "",
+            imageAlt: bottle.name,
+            description: bottle.name,
+            items: [
+              { id: size.sizeId, kind: "size", name: size.size, quantity: 1 },
+            ],
+          });
+        },
+      }];
+    },
+  );
 
   const productsToShow: CatalogProduct[] = [
     ...catalog.cupSizes.map((size, index) => {
@@ -222,6 +300,7 @@ export function ProductCatalog({
         });
       },
     })),
+    ...bottleProducts,
   ];
 
   function customizeSelectedProduct() {
@@ -229,12 +308,16 @@ export function ProductCatalog({
     const choose = selectedProduct.choose;
     setSelectedProduct(null);
     choose(
-      selectedProduct.type === "gourmet" ? selectedGourmetSizeId : undefined,
+      selectedProduct.type === "gourmet" || selectedProduct.type === "bottle"
+        ? selectedGourmetSizeId
+        : undefined,
     );
   }
 
   function openProduct(product: CatalogProduct) {
-    setSelectedGourmetSizeId(product.gourmetSizes?.[0]?.sizeId ?? "");
+    setSelectedGourmetSizeId(
+      product.gourmetSizes?.[0]?.sizeId ?? product.bottleSizes?.[0]?.sizeId ?? "",
+    );
     setSelectedProduct(product);
   }
 
@@ -259,13 +342,18 @@ export function ProductCatalog({
     if (sortOrder === "price-desc") return right.price - left.price;
     return left.rank - right.rank;
   });
-  const selectedGourmetSize = selectedProduct?.gourmetSizes?.find(
+  const selectedProductSizes =
+    selectedProduct?.type === "gourmet"
+      ? selectedProduct.gourmetSizes
+      : selectedProduct?.type === "bottle"
+        ? selectedProduct.bottleSizes
+        : undefined;
+  const selectedSize = selectedProductSizes?.find(
     (size) => size.sizeId === selectedGourmetSizeId,
   );
-  const selectedProductPrice =
-    selectedProduct?.type === "gourmet" && selectedGourmetSize
-      ? selectedGourmetSize.priceCents / 100
-      : selectedProduct?.price ?? 0;
+  const selectedProductPrice = selectedSize
+    ? selectedSize.priceCents / 100
+    : (selectedProduct?.price ?? 0);
 
   return (
     <section
@@ -305,6 +393,7 @@ export function ProductCatalog({
                   ["custom", "Monte o seu"],
                   ["combo", "Combos"],
                   ["gourmet", "Gourmet"],
+                  ["bottle", "Açaí na Garrafa"],
                 ] as const
               ).map(([value, label]) => (
                 <label
@@ -455,7 +544,9 @@ export function ProductCatalog({
                           ? "Monte o seu"
                           : product.type === "gourmet"
                             ? "Gourmet"
-                            : "Combo"}
+                            : product.type === "bottle"
+                              ? "Açaí na Garrafa"
+                              : "Combo"}
                       </p>
                       <h3 className="line-clamp-2 min-h-8 text-xs font-bold leading-4 text-text sm:mt-1 sm:min-h-12 sm:text-base sm:leading-normal">
                         {product.name}
@@ -523,7 +614,9 @@ export function ProductCatalog({
                         ? "Monte o seu"
                         : selectedProduct.type === "gourmet"
                           ? "Gourmet"
-                          : selectedProduct.tag || "Combo"}
+                          : selectedProduct.type === "bottle"
+                            ? "Açaí na Garrafa"
+                            : selectedProduct.tag || "Combo"}
                     </p>
                     <button
                       type="button"
@@ -543,14 +636,13 @@ export function ProductCatalog({
                   <p className="mt-3 text-sm leading-6 text-text/80">
                     {selectedProduct.details}
                   </p>
-                  {selectedProduct.type === "gourmet" &&
-                    selectedProduct.gourmetSizes && (
+                  {selectedProductSizes && (
                       <fieldset className="mt-5 space-y-2">
                         <legend className="text-sm font-extrabold text-crimson">
                           Escolha o tamanho
                         </legend>
                         <div className="flex flex-wrap gap-2" role="group">
-                          {selectedProduct.gourmetSizes.map((size) => (
+                          {selectedProductSizes.map((size) => (
                             <button
                               key={size.sizeId}
                               type="button"
@@ -580,7 +672,7 @@ export function ProductCatalog({
                   <div className="mt-5 flex items-end justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold text-crimson/75">
-                        {selectedProduct.type === "gourmet" ? "Valor do tamanho" : "Valor"}
+                        {selectedProductSizes ? "Valor do tamanho" : "Valor"}
                       </p>
                       <p className="text-2xl font-black text-crimson">
                         {currency.format(selectedProductPrice)}
@@ -591,8 +683,7 @@ export function ProductCatalog({
                       onClick={customizeSelectedProduct}
                       disabled={
                         !storeIsOpen ||
-                        (selectedProduct.type === "gourmet" &&
-                          !selectedGourmetSize)
+                        (selectedProductSizes && !selectedSize)
                       }
                       className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-crimson px-4 text-sm font-extrabold text-white transition-colors hover:bg-dark"
                     >
@@ -602,7 +693,9 @@ export function ProductCatalog({
                             ? "Personalizar"
                             : selectedProduct.type === "gourmet"
                               ? "Ver receita Gourmet"
-                              : "Personalizar combo"}
+                              : selectedProduct.type === "bottle"
+                                ? "Personalizar garrafa"
+                                : "Personalizar combo"}
                           <ArrowRightIcon aria-hidden="true" size={17} />
                         </>
                       ) : (

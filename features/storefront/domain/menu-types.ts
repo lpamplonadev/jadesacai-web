@@ -51,7 +51,7 @@ export type MenuGourmet = {
 };
 
 export type MenuOrderProduct = {
-  type: "custom" | "combo" | "gourmet";
+  type: "custom" | "combo" | "gourmet" | "bottle";
   id: string;
   name: string;
   sizeId: string;

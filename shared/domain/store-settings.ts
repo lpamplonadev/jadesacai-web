@@ -23,6 +23,29 @@ export type DeliveryZone = {
   enabled: boolean;
 };
 
+export type BottleExtraSetting = {
+  key: "leite-condensado" | "doce-de-leite" | "creme-de-avela";
+  name: string;
+  priceCents: number;
+  enabled: boolean;
+};
+
+export type BottleProductSetting = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  price300Cents: number;
+  price500Cents: number;
+};
+
+export type BottleCatalogSettings = {
+  enabled: boolean;
+  price300Cents: number;
+  price500Cents: number;
+  bottles: BottleProductSetting[];
+  extras: BottleExtraSetting[];
+};
+
 export type StoreSettings = {
   weeklyHours: Record<StoreWeekday, OperatingHours>;
   story: {
@@ -33,6 +56,7 @@ export type StoreSettings = {
   manualOverride: boolean | null;
   deliveryOriginAddress: string;
   deliveryZones: DeliveryZone[];
+  bottleCatalog: BottleCatalogSettings;
 };
 
 export type StoreStatus = {
@@ -60,6 +84,32 @@ export const defaultStoreSettings: StoreSettings = {
   manualOverride: null,
   deliveryOriginAddress: "Rua Nepomuceno, 12, Realengo, Rio de Janeiro - RJ",
   deliveryZones: [],
+  bottleCatalog: {
+    enabled: false,
+    price300Cents: 0,
+    price500Cents: 0,
+    bottles: [],
+    extras: [
+      {
+        key: "leite-condensado",
+        name: "Leite condensado",
+        priceCents: 0,
+        enabled: false,
+      },
+      {
+        key: "doce-de-leite",
+        name: "Doce de leite",
+        priceCents: 0,
+        enabled: false,
+      },
+      {
+        key: "creme-de-avela",
+        name: "Creme de avelã",
+        priceCents: 0,
+        enabled: false,
+      },
+    ],
+  },
 };
 
 export function findDeliveryZone(

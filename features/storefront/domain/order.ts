@@ -86,6 +86,7 @@ export type OrderAcaiConfiguration = {
   sizeId: string;
   comboId: string;
   gourmetId: string;
+  bottleId: string;
   toppingIds: string[];
   sauceId: string;
   condimentPositionId: string;

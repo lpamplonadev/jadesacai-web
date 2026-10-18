@@ -27,6 +27,7 @@ import type {
 } from "@/features/storefront/domain/order";
 import {
   findDeliveryZone,
+  type BottleCatalogSettings,
   type DeliveryZone,
   type StoreStatus,
 } from "@/shared/domain/store-settings";
@@ -50,6 +51,7 @@ export function AcaiBuilder({
   onClearProduct,
   onCartCountChange,
   catalog,
+  bottleCatalog,
   deliveryZones,
   storeIsOpen,
   whatsAppNumber,
@@ -59,6 +61,7 @@ export function AcaiBuilder({
   onClearProduct: () => void;
   onCartCountChange: (count: number) => void;
   catalog: BuilderCatalogData;
+  bottleCatalog: BottleCatalogSettings;
   deliveryZones: DeliveryZone[];
   storeIsOpen: boolean;
   whatsAppNumber: string;
@@ -118,6 +121,15 @@ export function AcaiBuilder({
 
   function setProductDefaultItems(combo: MenuOrderProduct) {
     const comboItems = combo.items;
+    if (combo.type === "bottle") {
+      setSelectedFlavor(null);
+      setSelectedSauce("none");
+      setSelectedCondimentPosition(null);
+      setSelectedToppings([]);
+      setSelectedFruits([]);
+      setSelectedExtras([]);
+      return;
+    }
     if (combo.type === "gourmet") {
       setSelectedFlavor(
         comboItems.find((item) => item.kind === "flavor")?.id ?? null,
@@ -172,6 +184,7 @@ export function AcaiBuilder({
   const comboServingCount = comboPortions.length;
   const flavor = flavors.find((item) => item.id === selectedFlavor) ?? null;
   const isFixedGourmet = selectedCombo?.type === "gourmet";
+  const isBottle = selectedCombo?.type === "bottle";
   const size = selectedCombo ? (comboPortions[comboServingIndex] ?? null) : null;
   const toppingAllowance = isFixedGourmet
     ? selectedToppings.length
@@ -179,11 +192,22 @@ export function AcaiBuilder({
   const fruitAllowance = isFixedGourmet
     ? selectedFruits.length
     : (selectedCombo?.includedFruits ?? 0);
-  const extrasAllowance = isFixedGourmet
-    ? selectedExtras.length
-    : (selectedCombo?.includedExtras ?? 0);
+  const extrasAllowance = isBottle
+    ? 0
+    : isFixedGourmet
+      ? selectedExtras.length
+      : (selectedCombo?.includedExtras ?? 0);
+  const availableExtras = isBottle
+    ? bottleCatalog.extras
+        .filter((extra) => extra.enabled)
+        .map((extra) => ({
+          id: extra.key,
+          name: extra.name,
+          price: extra.priceCents / 100,
+        }))
+    : extras;
   const selectedExtrasList = selectedExtras.flatMap((id) => {
-    const extra = extras.find((item) => item.id === id);
+    const extra = availableExtras.find((item) => item.id === id);
     return extra ? [extra] : [];
   });
   const toppingsTotal = isFixedGourmet
@@ -220,10 +244,9 @@ export function AcaiBuilder({
   const currentItemSubtotal = isFixedGourmet
     ? comboPrice
     : comboPrice +
-      toppingsTotal +
-      fruitsTotal +
+      (isBottle ? 0 : toppingsTotal + fruitsTotal) +
       extrasTotal +
-      (condimentPosition?.price ?? 0);
+      (isBottle ? 0 : (condimentPosition?.price ?? 0));
   const cartSubtotal = cartItems.reduce(
     (subtotal, item) => subtotal + item.estimatedSubtotalCents / 100,
     0,
@@ -351,6 +374,7 @@ export function AcaiBuilder({
       sizeId: size.id,
       comboId: selectedCombo?.type === "combo" ? selectedCombo.id : "",
       gourmetId: selectedCombo?.type === "gourmet" ? selectedCombo.id : "",
+      bottleId: selectedCombo?.type === "bottle" ? selectedCombo.id : "",
       toppingIds: [...selectedToppings],
       sauceId: selectedSauce ?? "none",
       condimentPositionId: selectedCondimentPosition ?? "bottom",
@@ -368,10 +392,14 @@ export function AcaiBuilder({
       ...(selectedCombo && selectedCombo.type !== "custom"
         ? [selectedCombo.name]
         : []),
-      `Acompanhamentos: ${toppingNames.join(", ") || "nenhum"}`,
       `Calda: ${selectedSauce === "none" ? "sem calda" : (sauces.find((item) => item.id === selectedSauce)?.name ?? "nenhuma")}`,
-      `Condimentos: ${condimentPosition?.name ?? "padrão"}`,
-      `Frutas: ${fruitNames.join(", ") || "nenhuma"}`,
+      ...(!isBottle
+        ? [
+            `Acompanhamentos: ${toppingNames.join(", ") || "nenhum"}`,
+            `Condimentos: ${condimentPosition?.name ?? "padrão"}`,
+            `Frutas: ${fruitNames.join(", ") || "nenhuma"}`,
+          ]
+        : []),
       `Extras: ${selectedExtrasList.map((item) => item.name).join(", ") || "nenhum"}`,
     ].join(" · ");
 
@@ -382,7 +410,9 @@ export function AcaiBuilder({
         name:
           selectedCombo?.type === "custom"
             ? selectedCombo.name
-            : selectedCombo?.type === "gourmet"
+            : selectedCombo?.type === "bottle"
+              ? `${selectedCombo.name} · ${size.name}`
+              : selectedCombo?.type === "gourmet"
               ? `${selectedCombo.name} · ${size.name}`
               : `${selectedCombo?.name} · ${size.name} · ${comboServingIndex + 1}/${comboServingCount}`,
         acai,
@@ -742,7 +772,7 @@ export function AcaiBuilder({
                 </p>
               </fieldset>
 
-              <div className="space-y-2">
+              <div hidden={isBottle} className="space-y-2">
                 <ChoiceChecklist
                   title="Acompanhamentos"
                   number="03"
@@ -767,7 +797,9 @@ export function AcaiBuilder({
                   <span className="mr-2 text-coral">04</span> Caldas
                 </legend>
                 <p className="mt-1 text-sm text-crimson/75">
-                  Escolha uma calda grátis ou marque “Sem calda”.
+                  {isBottle
+                    ? "Escolha uma calda opcional ou marque “Sem calda”."
+                    : "Escolha uma calda grátis ou marque “Sem calda”."}
                 </p>
                 <div className="mt-4 grid gap-x-6 sm:grid-cols-2">
                   {sauces.map((sauce) => (
@@ -788,7 +820,7 @@ export function AcaiBuilder({
                         <span className="font-semibold">{sauce.name}</span>
                       </span>
                       <span className="text-xs font-semibold text-crimson/75">
-                        grátis
+                        {isBottle ? "opcional" : "grátis"}
                       </span>
                     </label>
                   ))}
@@ -807,7 +839,10 @@ export function AcaiBuilder({
                 </div>
               </fieldset>
 
-              <fieldset className={isFixedGourmet ? "opacity-45" : ""}>
+              <fieldset
+                hidden={isBottle}
+                className={isFixedGourmet ? "opacity-45" : ""}
+              >
                 <legend className="text-lg font-extrabold text-crimson">
                   <span className="mr-2 text-coral">05</span> Posição dos
                   condimentos
@@ -845,7 +880,7 @@ export function AcaiBuilder({
                 </div>
               </fieldset>
 
-              <div className="space-y-2">
+              <div hidden={isBottle} className="space-y-2">
                 <ChoiceChecklist
                   title="Frutas"
                   number="06"
@@ -867,15 +902,18 @@ export function AcaiBuilder({
 
               <fieldset className={isFixedGourmet ? "opacity-45" : ""}>
                 <legend className="text-lg font-extrabold text-crimson">
-                  <span className="mr-2 text-coral">07</span> Extras
+                  <span className="mr-2 text-coral">07</span>
+                  {isBottle ? "Extras opcionais" : "Extras"}
                 </legend>
                 <p className="mt-1 text-sm text-crimson/75">
-                  {selectedCombo
+                  {isBottle
+                    ? "Escolha apenas entre os extras disponíveis para a garrafa."
+                    : selectedCombo
                     ? `${extrasAllowance} extra incluído no combo; cada extra adicional custa ${currency.format(3)}.`
                     : `Cada extra custa ${currency.format(3)}.`}
                 </p>
                 <div className="mt-4 grid gap-x-6 sm:grid-cols-2">
-                  {extras.map((item) => (
+                  {availableExtras.map((item) => (
                     <label
                       key={item.id}
                       className="flex min-h-12 cursor-pointer items-center justify-between gap-3 border-b border-blush/80 py-2 text-sm text-text"
