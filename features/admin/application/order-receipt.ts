@@ -30,16 +30,18 @@ const receiptStyles = `
     width: 48mm;
     padding: 2mm 0 6mm;
     color: #000;
-    font-family: "Courier New", Courier, monospace;
-    font-size: 11px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-weight: 700;
+    font-size: 12px;
     line-height: 1.3;
+    -webkit-text-stroke: 0.25px #000;
     word-wrap: break-word;
     overflow-wrap: anywhere;
   }
-  h1 { margin: 0; font-size: 15px; text-align: center; }
+  h1 { margin: 0; font-size: 16px; text-align: center; }
   .center { text-align: center; }
-  .strong { font-weight: 700; }
-  .sep { margin: 5px 0; border-top: 1px dashed #000; }
+  .strong { font-weight: 900; }
+  .sep { margin: 5px 0; border-top: 2px dashed #000; }
   .row { display: flex; justify-content: space-between; gap: 6px; }
   .row .value { flex-shrink: 0; text-align: right; }
   .detail { padding-left: 8px; }
