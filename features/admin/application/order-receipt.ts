@@ -87,18 +87,24 @@ export function buildOrderReceiptHtml(receipt: OrderReceipt) {
 }
 
 export function printOrderReceipt(receipt: OrderReceipt) {
-  const frame = document.createElement("iframe");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText =
-    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-  frame.srcdoc = buildOrderReceiptHtml(receipt);
-  frame.onload = () => {
-    const printWindow = frame.contentWindow;
-    if (!printWindow) return;
-    printWindow.onafterprint = () => frame.remove();
-    printWindow.focus();
-    printWindow.print();
-  };
-  document.body.appendChild(frame);
-  window.setTimeout(() => frame.remove(), 120_000);
+  return new Promise<void>((resolve) => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText =
+      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    frame.srcdoc = buildOrderReceiptHtml(receipt);
+    frame.onload = () => {
+      const printWindow = frame.contentWindow;
+      if (!printWindow) {
+        resolve();
+        return;
+      }
+      printWindow.onafterprint = () => frame.remove();
+      printWindow.focus();
+      printWindow.print();
+      resolve();
+    };
+    document.body.appendChild(frame);
+    window.setTimeout(() => frame.remove(), 120_000);
+  });
 }

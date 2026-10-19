@@ -32,13 +32,6 @@ function toPriceCents(value: string) {
   return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
 }
 
-async function readUploadError(response: Response) {
-  const result = (await response.json().catch(() => null)) as {
-    error?: string;
-  } | null;
-  return result?.error ?? "Não foi possível enviar a imagem.";
-}
-
 export function BottleEditorDialog({
   bottle,
   defaultExtras,

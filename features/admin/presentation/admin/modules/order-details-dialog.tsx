@@ -9,19 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import {
-  condimentPositions,
-  cupSizes,
-  extras,
-  flavors,
-  fruits,
-  sauces,
-  toppings,
-} from "@/features/storefront/domain/acai-builder-data";
-import {
   orderStatuses,
   type AdminOrder,
   type OrderItemPayload,
-  type OrderPayload,
 } from "@/features/admin/domain/orders";
 import {
   formatOrderDate,
@@ -29,36 +19,20 @@ import {
 } from "@/features/admin/application/order-formatting";
 import { requestAdminApi } from "@/features/admin/infrastructure/admin-api";
 import { printOrderReceipt } from "@/features/admin/application/order-receipt";
+import {
+  asOrderPayload,
+  buildChoiceCatalog,
+  buildOrderReceipt,
+  choiceName,
+  choiceNames,
+  paymentMethodName,
+  resolveOrderItems,
+} from "@/features/admin/application/order-receipt-data";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
-
-function asOrderPayload(value: unknown): OrderPayload {
-  return typeof value === "object" && value !== null
-    ? (value as OrderPayload)
-    : {};
-}
-
-function choiceName(
-  choices: readonly { id: string; name: string }[],
-  id?: string,
-) {
-  if (!id) return "Não selecionado";
-  return (
-    choices.find((choice) => choice.id === id)?.name ??
-    "Item não encontrado no catálogo"
-  );
-}
-
-function choiceNames(
-  choices: readonly { id: string; name: string }[],
-  ids: string[] | undefined,
-) {
-  if (!ids?.length) return "Nenhum";
-  return ids.map((id) => choiceName(choices, id)).join(", ");
-}
 
 function OrderField({
   label,
@@ -102,38 +76,13 @@ export function OrderDetailsDialog({
   const payload = asOrderPayload(order.orderData);
   const delivery = payload.delivery;
   const payment = payload.payment;
-  const choiceCatalog = [
-    ...catalogItems,
-    { id: "bottle-300", name: "300 ml" },
-    { id: "bottle-500", name: "500 ml" },
-    ...flavors,
-    ...cupSizes,
-    ...toppings,
-    ...sauces,
-    ...condimentPositions,
-    ...fruits,
-    ...extras,
-  ];
-  const orderItems: OrderItemPayload[] = payload.items?.length
-    ? payload.items
-    : payload.acai
-      ? [
-          {
-            id: order.id,
-            name:
-              catalogCombos.find((combo) => combo.id === payload.acai?.comboId)
-                ?.name ??
-              catalogGourmets.find(
-                (gourmet) =>
-                  gourmet.id === payload.acai?.gourmetId ||
-                  gourmet.id === payload.acai?.comboId,
-              )
-                ?.name ?? "Produto do cardápio",
-            estimatedSubtotalCents: order.estimatedTotalCents,
-            acai: payload.acai,
-          },
-        ]
-      : [];
+  const choiceCatalog = buildChoiceCatalog(catalogItems);
+  const orderItems: OrderItemPayload[] = resolveOrderItems(
+    order,
+    payload,
+    catalogCombos,
+    catalogGourmets,
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -194,69 +143,18 @@ export function OrderDetailsDialog({
     }
   }
 
-  const paymentMethod =
-    {
-      pix: "Pix",
-      cash: "Dinheiro",
-      card: "Cartão na entrega",
-    }[payment?.method ?? ""] ??
-    payment?.method ??
-    "Não informado";
+  const paymentMethod = paymentMethodName(payment?.method);
   const changeFor = payment?.changeForCents;
 
   function printOrder() {
-    const optional = (label: string, value: string) =>
-      value === "Nenhum" || value === "Não selecionado" ? [] : [`${label}: ${value}`];
-    const list = (label: string, ids: string[] | undefined) =>
-      ids?.length
-        ? [`${label}:`, ...ids.map((id) => `º ${choiceName(choiceCatalog, id)}`)]
-        : [];
-    const address = [
-      [delivery?.street, delivery?.number].filter(Boolean).join(", "),
-      delivery?.complement,
-      delivery?.neighborhood,
-      delivery?.postalCode ? `CEP ${delivery.postalCode}` : "",
-      delivery?.reference ? `Ref.: ${delivery.reference}` : "",
-    ].filter((line): line is string => Boolean(line));
-    const deliveryFee = delivery?.deliveryFeeCents;
-
-    printOrderReceipt({
-      orderNumber: formatOrderNumber(order.orderNumber),
-      dateTime: `${new Date(`${order.orderDate}T12:00:00`).toLocaleDateString("pt-BR")} ${new Date(
-        order.createdAt,
-      ).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "America/Sao_Paulo",
-      })}`,
-      customerName: payload.customer?.name ?? order.customerName,
-      customerPhone: payload.customer?.phone ?? order.customerPhone,
-      items: orderItems.map((item) => ({
-        name: item.name,
-        subtotal: currency.format(item.estimatedSubtotalCents / 100),
-        details: [
-          ...optional("Sabor", choiceName(choiceCatalog, item.acai.flavorId)),
-          ...optional("Tam.", choiceName(choiceCatalog, item.acai.sizeId)),
-          ...(item.acai.sauceId === "none"
-            ? ["Sem calda"]
-            : optional("Calda", choiceName(choiceCatalog, item.acai.sauceId))),
-          ...list("Acomp.", item.acai.toppingIds),
-          ...list("Frutas", item.acai.fruitIds),
-          ...list("Extras", item.acai.extraIds),
-        ],
-      })),
-      deliveryFee: deliveryFee ? currency.format(deliveryFee / 100) : undefined,
-      total: currency.format(order.estimatedTotalCents / 100),
-      payment: paymentMethod,
-      change:
-        payment?.needsChange && changeFor
-          ? `Troco para ${currency.format(changeFor / 100)}`
-          : undefined,
-      address,
-      notes: payload.notes,
-    });
+    void printOrderReceipt(
+      buildOrderReceipt(order, {
+        items: catalogItems,
+        combos: catalogCombos,
+        gourmets: catalogGourmets,
+      }),
+    );
   }
-
   return (
     <dialog
       ref={dialogRef}

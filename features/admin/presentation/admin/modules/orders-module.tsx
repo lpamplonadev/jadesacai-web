@@ -9,6 +9,7 @@ import {
 } from "@/features/admin/application/order-formatting";
 import { orderStatuses, type AdminOrder } from "@/features/admin/domain/orders";
 import { OrderDetailsDialog } from "@/features/admin/presentation/admin/modules/order-details-dialog";
+import { AutoPrintToggle } from "@/features/admin/presentation/admin/modules/auto-print-toggle";
 
 type OrdersResponse = {
   orders: AdminOrder[];
@@ -129,7 +130,9 @@ export function OrdersModule() {
             Consulte pedidos recebidos e acompanhe cada etapa da operação.
           </p>
         </div>
-        <button
+        <div className="flex flex-wrap items-start gap-2">
+          <AutoPrintToggle />
+          <button
           type="button"
           onClick={() => setRefreshKey((value) => value + 1)}
           disabled={loading}
@@ -138,6 +141,7 @@ export function OrdersModule() {
           <ArrowClockwiseIcon aria-hidden="true" size={17} />
           Atualizar
         </button>
+        </div>
       </div>
 
       <form
