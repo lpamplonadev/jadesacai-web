@@ -35,6 +35,15 @@ import {
 type BuilderCartItem = CreateOrderLine & { description: string };
 
 function getProductPortions(product: MenuOrderProduct, cupSizes: BuilderPriceChoice[]) {
+  if (product.type === "bottle") {
+    return product.items
+      .filter((item) => item.kind === "size")
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: product.priceCents / 100,
+      }));
+  }
   const portions = product.items
     .filter((item) => item.kind === "size")
     .flatMap((item) => {
