@@ -506,7 +506,7 @@ export function ProductCatalog({
           </div>
 
           {sortedProducts.length ? (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-3">
               {sortedProducts.map((product) => (
                 <article
                   key={product.id}
