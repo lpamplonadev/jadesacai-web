@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
-import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import Image from "next/image";
+import {
+  ArchiveBoxIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import { requestAdminApi } from "@/features/admin/infrastructure/admin-api";
+import { BottleEditorDialog } from "@/features/admin/presentation/admin/modules/bottle-editor-dialog";
 import {
   defaultStoreSettings,
   type BottleCatalogSettings,
-  type BottleExtraSetting,
   type BottleProductSetting,
   type StoreSettings,
   type StoreStatus,
@@ -16,9 +23,6 @@ type BottleProductDraft = Omit<BottleProductSetting, "price300Cents" | "price500
   price300: string;
   price500: string;
 };
-
-const inputClassName =
-  "min-h-11 w-full rounded-md border border-[#d6d6ce] bg-white px-3 text-sm text-[#33332d] outline-none focus:border-[#8b1a2e]";
 
 async function readError(response: Response) {
   const result = (await response.json().catch(() => null)) as {
@@ -41,7 +45,17 @@ function parseMoneyInput(value: string) {
 }
 
 function normalizeBottleCatalog(catalog: BottleCatalogSettings): BottleCatalogSettings {
-  if (catalog.bottles?.length) return catalog;
+  if (catalog.bottles?.length) {
+    return {
+      ...catalog,
+      bottles: catalog.bottles.map((bottle) => ({
+        ...bottle,
+        available300: bottle.available300 ?? bottle.price300Cents > 0,
+        available500: bottle.available500 ?? bottle.price500Cents > 0,
+        extras: bottle.extras?.length ? bottle.extras : catalog.extras,
+      })),
+    };
+  }
   if (!catalog.enabled && !catalog.price300Cents && !catalog.price500Cents) {
     return { ...catalog, bottles: [] };
   }
@@ -50,10 +64,38 @@ function normalizeBottleCatalog(catalog: BottleCatalogSettings): BottleCatalogSe
     bottles: [{
       id: "bottle-acai",
       name: "Açaí na Garrafa",
+      imageUrl: "",
+      imageAlt: "",
       enabled: catalog.enabled,
+      available300: catalog.price300Cents > 0,
+      available500: catalog.price500Cents > 0,
       price300Cents: catalog.price300Cents,
       price500Cents: catalog.price500Cents,
+      extras: catalog.extras,
     }],
+  };
+}
+
+function toBottleDraft(bottle: BottleProductSetting): BottleProductDraft {
+  return {
+    ...bottle,
+    price300: formatMoneyInput(bottle.price300Cents),
+    price500: formatMoneyInput(bottle.price500Cents),
+  };
+}
+
+function toBottleProduct(bottle: BottleProductDraft): BottleProductSetting {
+  return {
+    id: bottle.id,
+    name: bottle.name,
+    imageUrl: bottle.imageUrl,
+    imageAlt: bottle.imageAlt,
+    enabled: bottle.enabled,
+    available300: bottle.available300,
+    available500: bottle.available500,
+    price300Cents: bottle.available300 ? parseMoneyInput(bottle.price300) ?? 0 : 0,
+    price500Cents: bottle.available500 ? parseMoneyInput(bottle.price500) ?? 0 : 0,
+    extras: bottle.extras,
   };
 }
 
@@ -65,13 +107,13 @@ export function BottleCatalogModule() {
     defaultStoreSettings.bottleCatalog,
   );
   const [bottles, setBottles] = useState<BottleProductDraft[]>([]);
-  const [extraPriceDrafts, setExtraPriceDrafts] = useState<Record<string, string>>(
-    {},
-  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [bottleEditor, setBottleEditor] = useState<{
+    bottle?: BottleProductSetting;
+  } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -89,21 +131,7 @@ export function BottleCatalogModule() {
         );
         setStoreSettings(result.settings);
         setBottleCatalog(loadedBottle);
-        setBottles(loadedBottle.bottles.map((bottle) => ({
-          id: bottle.id,
-          name: bottle.name,
-          enabled: bottle.enabled,
-          price300: formatMoneyInput(bottle.price300Cents),
-          price500: formatMoneyInput(bottle.price500Cents),
-        })));
-        setExtraPriceDrafts(
-          Object.fromEntries(
-            loadedBottle.extras.map((extra) => [
-              extra.key,
-              formatMoneyInput(extra.priceCents),
-            ]),
-          ),
-        );
+        setBottles(loadedBottle.bottles.map(toBottleDraft));
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setError(
@@ -121,77 +149,10 @@ export function BottleCatalogModule() {
     return () => controller.abort();
   }, []);
 
-  function updateExtra(key: string, patch: Partial<BottleExtraSetting>) {
-    setBottleCatalog((current) => ({
-      ...current,
-      extras: current.extras.map((extra) =>
-        extra.key === key ? { ...extra, ...patch } : extra,
-      ),
-    }));
-  }
-
-  function updateBottle(id: string, patch: Partial<BottleProductDraft>) {
-    setBottles((current) =>
-      current.map((bottle) =>
-        bottle.id === id ? { ...bottle, ...patch } : bottle,
-      ),
-    );
-  }
-
-  function addBottle() {
-    setBottles((current) => [
-      ...current,
-      {
-        id: `bottle-${crypto.randomUUID()}`,
-        name: "",
-        enabled: false,
-        price300: "0,00",
-        price500: "0,00",
-      },
-    ]);
-  }
-
-  async function saveBottleCatalog(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveBottleProducts(nextBottles: BottleProductSetting[]) {
     setSaving(true);
     setError("");
     setFeedback("");
-
-    const parsedBottles = bottles.map((bottle) => {
-      const price300Cents = parseMoneyInput(bottle.price300);
-      const price500Cents = parseMoneyInput(bottle.price500);
-      if (!bottle.name.trim() || price300Cents === null || price500Cents === null) {
-        return null;
-      }
-      return {
-        id: bottle.id,
-        name: bottle.name.trim(),
-        enabled: bottle.enabled,
-        price300Cents,
-        price500Cents,
-      };
-    });
-    if (parsedBottles.some((bottle) => bottle === null)) {
-      setError("Informe o nome e preços válidos para cada garrafa.");
-      setSaving(false);
-      return;
-    }
-    const nextBottles = parsedBottles as BottleProductSetting[];
-    if (nextBottles.some((bottle) => bottle.enabled && (!bottle.price300Cents || !bottle.price500Cents))) {
-      setError("Informe os preços de 300 ml e 500 ml antes de disponibilizar cada garrafa.");
-      setSaving(false);
-      return;
-    }
-
-    const extras = bottleCatalog.extras.map((extra) => {
-      const priceCents = parseMoneyInput(extraPriceDrafts[extra.key] ?? "");
-      return priceCents === null ? null : { ...extra, priceCents };
-    });
-    if (extras.some((extra) => extra === null)) {
-      setError("Informe um preço válido para cada extra.");
-      setSaving(false);
-      return;
-    }
 
     const nextBottleCatalog: BottleCatalogSettings = {
       ...bottleCatalog,
@@ -199,7 +160,6 @@ export function BottleCatalogModule() {
       enabled: nextBottles[0]?.enabled ?? false,
       price300Cents: nextBottles[0]?.price300Cents ?? 0,
       price500Cents: nextBottles[0]?.price500Cents ?? 0,
-      extras: extras as BottleExtraSetting[],
     };
 
     try {
@@ -211,16 +171,89 @@ export function BottleCatalogModule() {
       if (!response.ok) throw new Error(await readError(response));
       const result = (await response.json()) as StoreStatus;
       setStoreSettings(result.settings);
-      setBottleCatalog(normalizeBottleCatalog(result.settings.bottleCatalog));
-      setFeedback("Garrafas salvas.");
+      const savedCatalog = normalizeBottleCatalog(result.settings.bottleCatalog);
+      setBottleCatalog(savedCatalog);
+      setBottles(savedCatalog.bottles.map(toBottleDraft));
+      setFeedback("Catálogo de garrafas salvo.");
     } catch (saveError) {
-      setError(
+      throw new Error(
         saveError instanceof Error
           ? saveError.message
           : "Não foi possível salvar a configuração da garrafa.",
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveBottle(bottle: BottleProductSetting) {
+    const nextBottles = bottles.map((current) => ({
+      id: current.id,
+      name: current.name,
+      imageUrl: current.imageUrl,
+      imageAlt: current.imageAlt,
+      enabled: current.enabled,
+      available300: current.available300,
+      available500: current.available500,
+      price300Cents: current.available300 ? parseMoneyInput(current.price300) ?? 0 : 0,
+      price500Cents: current.available500 ? parseMoneyInput(current.price500) ?? 0 : 0,
+      extras: current.extras,
+    }));
+    const existingIndex = nextBottles.findIndex((current) => current.id === bottle.id);
+    if (existingIndex >= 0) nextBottles[existingIndex] = bottle;
+    else nextBottles.push(bottle);
+    await saveBottleProducts(nextBottles);
+    setBottleEditor(null);
+  }
+
+  async function toggleBottle(bottle: BottleProductDraft) {
+    const nextBottles = bottles.map((current) => ({
+      id: current.id,
+      name: current.name,
+      imageUrl: current.imageUrl,
+      imageAlt: current.imageAlt,
+      enabled: current.id === bottle.id ? !current.enabled : current.enabled,
+      available300: current.available300,
+      available500: current.available500,
+      price300Cents: current.available300 ? parseMoneyInput(current.price300) ?? 0 : 0,
+      price500Cents: current.available500 ? parseMoneyInput(current.price500) ?? 0 : 0,
+      extras: current.extras,
+    }));
+    try {
+      await saveBottleProducts(nextBottles);
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível atualizar a disponibilidade.",
+      );
+    }
+  }
+
+  async function removeBottle(bottle: BottleProductDraft) {
+    if (!window.confirm(`Excluir “${bottle.name}” do catálogo de garrafas?`)) return;
+    const nextBottles = bottles
+      .filter((current) => current.id !== bottle.id)
+      .map((current) => ({
+        id: current.id,
+        name: current.name,
+        imageUrl: current.imageUrl,
+        imageAlt: current.imageAlt,
+        enabled: current.enabled,
+        available300: current.available300,
+        available500: current.available500,
+        price300Cents: current.available300 ? parseMoneyInput(current.price300) ?? 0 : 0,
+        price500Cents: current.available500 ? parseMoneyInput(current.price500) ?? 0 : 0,
+        extras: current.extras,
+      }));
+    try {
+      await saveBottleProducts(nextBottles);
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível excluir a garrafa.",
+      );
     }
   }
 
@@ -251,23 +284,23 @@ export function BottleCatalogModule() {
           Carregando configuração...
         </p>
       ) : (
-        <form onSubmit={saveBottleCatalog} className="divide-y divide-[#deded7]">
+        <div className="divide-y divide-[#deded7]">
           <fieldset className="space-y-4 py-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <legend className="text-base font-extrabold">Garrafas</legend>
                 <p className="mt-1 text-sm text-[#77776e]">
-                  Configure o nome, os tamanhos e a disponibilidade de cada produto.
+                  Produtos cadastrados no cardápio.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={addBottle}
+                onClick={() => setBottleEditor({})}
                 disabled={saving || bottles.length >= 50}
                 className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[#8b1a2e] px-3 text-sm font-bold text-[#8b1a2e] hover:bg-[#fbf2f3] disabled:opacity-50"
               >
                 <PlusIcon aria-hidden="true" size={17} />
-                Adicionar garrafa
+                Criar garrafa
               </button>
             </div>
 
@@ -276,142 +309,103 @@ export function BottleCatalogModule() {
                 Nenhuma garrafa cadastrada.
               </p>
             ) : (
-              <div className="divide-y divide-[#ecece6] border-y border-[#ecece6]">
-                {bottles.map((bottle, index) => (
-                  <div key={bottle.id} className="space-y-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-extrabold">
-                        {bottle.name.trim() || `Nova garrafa ${index + 1}`}
-                      </p>
-                      <button
-                        type="button"
-                        aria-label={`Remover ${bottle.name || `garrafa ${index + 1}`}`}
-                        onClick={() =>
-                          setBottles((current) =>
-                            current.filter((item) => item.id !== bottle.id),
-                          )
-                        }
-                        disabled={saving}
-                        className="flex size-9 items-center justify-center rounded-md text-[#77776e] hover:bg-red-50 hover:text-red-800 disabled:opacity-50"
-                      >
-                        <TrashIcon aria-hidden="true" size={17} />
-                      </button>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                      <label className="space-y-1.5 text-sm font-semibold">
-                        Nome do produto
-                        <input
-                          type="text"
-                          required
-                          maxLength={80}
-                          value={bottle.name}
-                          onChange={(event) =>
-                            updateBottle(bottle.id, { name: event.target.value })
-                          }
-                          placeholder="Ex.: Açaí na Garrafa"
-                          className={inputClassName}
-                        />
-                      </label>
-                      <label className="flex min-h-11 items-center gap-3 text-sm font-bold">
-                        <input
-                          type="checkbox"
-                          checked={bottle.enabled}
-                          disabled={
-                            saving ||
-                            !(parseMoneyInput(bottle.price300) ?? 0) ||
-                            !(parseMoneyInput(bottle.price500) ?? 0)
-                          }
-                          onChange={(event) =>
-                            updateBottle(bottle.id, { enabled: event.target.checked })
-                          }
-                          className="size-4 accent-[#8b1a2e]"
-                        />
-                        Disponível no cardápio
-                      </label>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {([
-                        ["price300", "300 ml"],
-                        ["price500", "500 ml"],
-                      ] as const).map(([key, label]) => (
-                        <label key={key} className="space-y-1.5 text-sm font-semibold">
-                          {label} · preço (R$)
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            required
-                            value={bottle[key]}
-                            onChange={(event) =>
-                              updateBottle(bottle.id, { [key]: event.target.value })
-                            }
-                            placeholder="0,00"
-                            className={inputClassName}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="mt-4 overflow-x-auto border border-[#deded7] bg-white">
+                <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                  <thead className="bg-[#f3f3ef] text-xs uppercase text-[#68685f]">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 font-extrabold">Garrafa</th>
+                      <th scope="col" className="px-4 py-3 font-extrabold">300 ml</th>
+                      <th scope="col" className="px-4 py-3 font-extrabold">500 ml</th>
+                      <th scope="col" className="px-4 py-3 font-extrabold">Disponibilidade</th>
+                      <th scope="col" className="px-4 py-3 font-extrabold">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e8e8e2]">
+                    {bottles.map((bottle) => (
+                      <tr key={bottle.id} className="align-middle hover:bg-[#fcfcfa]">
+                        <td className="px-4 py-3">
+                          <div className="flex min-w-48 items-center gap-3">
+                            <div className="relative size-12 shrink-0 overflow-hidden rounded-md border border-[#deded7] bg-[#f3f3ef]">
+                              {bottle.imageUrl ? (
+                                <Image
+                                  src={bottle.imageUrl}
+                                  alt={bottle.imageAlt || bottle.name}
+                                  fill
+                                  unoptimized
+                                  sizes="48px"
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <span className="flex size-full items-center justify-center text-[10px] text-[#77776e]">
+                                  Sem imagem
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-semibold">{bottle.name}</span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs font-bold">
+                          {bottle.available300 ? `R$ ${formatMoneyInput(parseMoneyInput(bottle.price300) ?? 0).replace(".", ",")}` : "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs font-bold">
+                          {bottle.available500 ? `R$ ${formatMoneyInput(parseMoneyInput(bottle.price500) ?? 0).replace(".", ",")}` : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${bottle.enabled ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                            {bottle.enabled ? "Ativo" : "Pausado"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setBottleEditor({ bottle: toBottleProduct(bottle) })}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#8b1a2e] hover:underline disabled:opacity-50"
+                            >
+                              <PencilSimpleIcon aria-hidden="true" size={15} /> Editar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void toggleBottle(bottle)}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#55554e] hover:underline disabled:opacity-50"
+                            >
+                              {bottle.enabled ? (
+                                <PauseIcon aria-hidden="true" size={15} />
+                              ) : (
+                                <PlayIcon aria-hidden="true" size={15} />
+                              )}
+                              {bottle.enabled ? "Pausar" : "Reativar"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void removeBottle(bottle)}
+                              className="inline-flex items-center gap-1 text-xs font-bold text-red-800 hover:underline disabled:opacity-50"
+                            >
+                              <ArchiveBoxIcon aria-hidden="true" size={15} /> Excluir
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </fieldset>
 
-          <fieldset className="space-y-3 py-5">
-            <legend className="text-base font-extrabold">
-              Extras opcionais
-            </legend>
-            <div className="divide-y divide-[#ecece6] border-y border-[#ecece6]">
-              {bottleCatalog.extras.map((extra) => (
-                <div
-                  key={extra.key}
-                  className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-center"
-                >
-                  <label className="flex min-h-10 items-center gap-3 text-sm font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={extra.enabled}
-                      onChange={(event) =>
-                        updateExtra(extra.key, { enabled: event.target.checked })
-                      }
-                      className="size-4 accent-[#8b1a2e]"
-                    />
-                    {extra.name}
-                  </label>
-                  <label className="space-y-1 text-xs font-semibold text-[#77776e]">
-                    Preço adicional (R$)
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      required
-                      value={extraPriceDrafts[extra.key] ?? ""}
-                      onChange={(event) =>
-                        setExtraPriceDrafts((current) => ({
-                          ...current,
-                          [extra.key]: event.target.value,
-                        }))
-                      }
-                      placeholder="0,00"
-                      className={inputClassName}
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-[#77776e]">
-              Uma garrafa precisa dos dois preços para ficar disponível no cardápio.
-            </p>
-            <button
-              type="submit"
-              disabled={saving}
-              className="min-h-11 rounded-md bg-[#8b1a2e] px-5 text-sm font-extrabold text-white transition-colors hover:bg-[#6b1222] disabled:cursor-wait disabled:opacity-50"
-            >
-              {saving ? "Salvando..." : "Salvar garrafas e extras"}
-            </button>
-          </div>
-        </form>
+          {bottleEditor && (
+            <BottleEditorDialog
+              key={bottleEditor.bottle?.id ?? "new-bottle"}
+              bottle={bottleEditor.bottle}
+              defaultExtras={bottleCatalog.extras}
+              onClose={() => setBottleEditor(null)}
+              onSave={saveBottle}
+            />
+          )}
+        </div>
       )}
     </section>
   );

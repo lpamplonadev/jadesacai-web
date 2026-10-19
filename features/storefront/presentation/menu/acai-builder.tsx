@@ -198,7 +198,9 @@ export function AcaiBuilder({
       ? selectedExtras.length
       : (selectedCombo?.includedExtras ?? 0);
   const availableExtras = isBottle
-    ? bottleCatalog.extras
+    ? (bottleCatalog.bottles.find((bottle) => bottle.id === selectedCombo?.id)?.extras?.length
+      ? bottleCatalog.bottles.find((bottle) => bottle.id === selectedCombo?.id)?.extras ?? []
+      : bottleCatalog.extras)
         .filter((extra) => extra.enabled)
         .map((extra) => ({
           id: extra.key,

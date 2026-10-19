@@ -33,9 +33,14 @@ export type BottleExtraSetting = {
 export type BottleProductSetting = {
   id: string;
   name: string;
+  imageUrl: string;
+  imageAlt: string;
   enabled: boolean;
+  available300: boolean;
+  available500: boolean;
   price300Cents: number;
   price500Cents: number;
+  extras: BottleExtraSetting[];
 };
 
 export type BottleCatalogSettings = {

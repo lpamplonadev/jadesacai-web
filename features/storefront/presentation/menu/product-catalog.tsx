@@ -97,25 +97,33 @@ export function ProductCatalog({
       ? [{
           id: "bottle-acai",
           name: "Açaí na Garrafa",
+          imageUrl: "",
+          imageAlt: "",
           enabled: bottleCatalog.enabled,
+          available300: bottleCatalog.price300Cents > 0,
+          available500: bottleCatalog.price500Cents > 0,
           price300Cents: bottleCatalog.price300Cents,
           price500Cents: bottleCatalog.price500Cents,
+          extras: bottleCatalog.extras,
         }]
       : [];
-  const bottleExtras = bottleCatalog.extras.filter((extra) => extra.enabled);
   const bottleProducts: CatalogProduct[] = configuredBottles.flatMap(
     (bottle, index) => {
       if (!bottle.enabled) return [];
+      const bottleExtras = (bottle.extras?.length
+        ? bottle.extras
+        : bottleCatalog.extras
+      ).filter((extra) => extra.enabled);
       const bottleSizes: MenuGourmetSize[] = [
         {
           sizeId: catalog.cupSizes.find((size) => size.name === "300 ml")?.id ?? "",
           size: "300 ml",
-          priceCents: bottle.price300Cents,
+          priceCents: bottle.available300 ? bottle.price300Cents : 0,
         },
         {
           sizeId: catalog.cupSizes.find((size) => size.name === "500 ml")?.id ?? "",
           size: "500 ml",
-          priceCents: bottle.price500Cents,
+          priceCents: bottle.available500 ? bottle.price500Cents : 0,
         },
       ].filter((size) => size.sizeId && size.priceCents > 0);
       if (!bottleSizes.length) return [];
@@ -137,8 +145,8 @@ export function ProductCatalog({
         pricePrefix: "A partir de",
         bottleSizes,
         tag: "Açaí na Garrafa",
-        image: products[0]?.image ?? "",
-        imageAlt: bottle.name,
+        image: bottle.imageUrl || products[0]?.image || "",
+        imageAlt: bottle.imageAlt || bottle.name,
         rank: combos.length + gourmets.length + index,
         choose: (sizeId?: string) => {
           const size = bottleSizes.find((option) => option.sizeId === sizeId);
@@ -154,8 +162,8 @@ export function ProductCatalog({
             includedFruits: 0,
             includedExtras: 0,
             tag: "Açaí na Garrafa",
-            image: products[0]?.image ?? "",
-            imageAlt: bottle.name,
+            image: bottle.imageUrl || products[0]?.image || "",
+            imageAlt: bottle.imageAlt || bottle.name,
             description: bottle.name,
             items: [
               { id: size.sizeId, kind: "size", name: size.size, quantity: 1 },
