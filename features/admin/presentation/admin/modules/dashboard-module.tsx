@@ -42,7 +42,7 @@ const currency = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 });
 
-const dashboardRefreshIntervalMs = 60_000;
+const dashboardRefreshIntervalMs = 15000;
 
 const statusChartColors: Record<string, string> = {
   received: "#8b1a2e",

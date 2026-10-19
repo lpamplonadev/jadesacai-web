@@ -12,8 +12,8 @@ import {
 
 const enabledKey = "jade-auto-print-enabled";
 const printedKey = "jade-auto-print-printed";
-const pollIntervalMs = 15_000;
-const gapBetweenPrintsMs = 2_000;
+const pollIntervalMs = 15000;
+const gapBetweenPrintsMs = 2000;
 const maxOrderAgeMs = 6 * 60 * 60 * 1000;
 const maxRememberedOrders = 300;
 
