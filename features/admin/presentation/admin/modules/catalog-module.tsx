@@ -15,7 +15,7 @@ import {
   catalogKindLabels,
 } from "@/features/admin/presentation/admin/modules/catalog-editor-dialog";
 import { GourmetEditorDialog } from "@/features/admin/presentation/admin/modules/gourmet-editor-dialog";
-import { BottleCatalogModule } from "@/features/admin/presentation/admin/modules/bottle-catalog-module";
+import { BottleEditorDialog } from "@/features/admin/presentation/admin/modules/bottle-editor-dialog";
 import type {
   CatalogCombo,
   CatalogEditor,
@@ -23,6 +23,13 @@ import type {
   CatalogItem,
   CatalogItemKind,
 } from "@/features/admin/domain/catalog";
+import {
+  defaultStoreSettings,
+  type BottleCatalogSettings,
+  type BottleProductSetting,
+  type StoreSettings,
+  type StoreStatus,
+} from "@/shared/domain/store-settings";
 
 type CatalogData = {
   items: CatalogItem[];
@@ -45,6 +52,34 @@ async function readAPIError(response: Response) {
   return result?.error ?? `A API respondeu com erro (${response.status}).`;
 }
 
+function normalizeBottleCatalog(catalog: BottleCatalogSettings): BottleCatalogSettings {
+  const bottles = catalog.bottles?.length
+    ? catalog.bottles
+    : catalog.enabled || catalog.price300Cents || catalog.price500Cents
+      ? [{
+          id: "bottle-acai",
+          name: "Açaí na Garrafa",
+          imageUrl: "",
+          imageAlt: "",
+          enabled: catalog.enabled,
+          available300: catalog.price300Cents > 0,
+          available500: catalog.price500Cents > 0,
+          price300Cents: catalog.price300Cents,
+          price500Cents: catalog.price500Cents,
+          extras: catalog.extras,
+        }]
+      : [];
+  return {
+    ...catalog,
+    bottles: bottles.map((bottle) => ({
+      ...bottle,
+      available300: bottle.available300 ?? bottle.price300Cents > 0,
+      available500: bottle.available500 ?? bottle.price500Cents > 0,
+      extras: bottle.extras?.length ? bottle.extras : catalog.extras,
+    })),
+  };
+}
+
 export function CatalogModule() {
   const [catalog, setCatalog] = useState<CatalogData>({
     items: [],
@@ -52,11 +87,18 @@ export function CatalogModule() {
     gourmets: [],
     rules: [],
   });
+  const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
+  const [bottleCatalog, setBottleCatalog] = useState<BottleCatalogSettings>(
+    defaultStoreSettings.bottleCatalog,
+  );
   const [tab, setTab] = useState<CatalogTab>("items");
   const [kindFilter, setKindFilter] = useState<"all" | CatalogItemKind>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [editor, setEditor] = useState<CatalogEditor | null>(null);
+  const [bottleEditor, setBottleEditor] = useState<{
+    bottle?: BottleProductSetting;
+  } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState("");
@@ -69,12 +111,29 @@ export function CatalogModule() {
       setLoading(true);
       setError("");
       try {
-        const response = await requestAdminApi("/catalog", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(await readAPIError(response));
-        setCatalog((await response.json()) as CatalogData);
+        const [catalogResponse, settingsResponse] = await Promise.all([
+          requestAdminApi("/catalog", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+          requestAdminApi("/settings", {
+            cache: "no-store",
+            signal: controller.signal,
+          }),
+        ]);
+        if (!catalogResponse.ok) throw new Error(await readAPIError(catalogResponse));
+        if (!settingsResponse.ok) throw new Error(await readAPIError(settingsResponse));
+        const [catalogResult, status] = await Promise.all([
+          catalogResponse.json() as Promise<CatalogData>,
+          settingsResponse.json() as Promise<StoreStatus>,
+        ]);
+        setCatalog(catalogResult);
+        setStoreSettings(status.settings);
+        setBottleCatalog(
+          normalizeBottleCatalog(
+            status.settings.bottleCatalog ?? defaultStoreSettings.bottleCatalog,
+          ),
+        );
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setError(
@@ -172,6 +231,64 @@ export function CatalogModule() {
     });
   }
 
+  async function saveBottleProducts(bottles: BottleProductSetting[]) {
+    if (!storeSettings) return false;
+    const bottleCatalog: BottleCatalogSettings = {
+      ...normalizeBottleCatalog(storeSettings.bottleCatalog),
+      bottles,
+      enabled: bottles[0]?.enabled ?? false,
+      price300Cents: bottles[0]?.price300Cents ?? 0,
+      price500Cents: bottles[0]?.price500Cents ?? 0,
+    };
+    setMutating("bottle");
+    setError("");
+    try {
+      const response = await requestAdminApi("/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...storeSettings, bottleCatalog }),
+      });
+      if (!response.ok) throw new Error(await readAPIError(response));
+      const status = (await response.json()) as StoreStatus;
+      setStoreSettings(status.settings);
+      setBottleCatalog(normalizeBottleCatalog(status.settings.bottleCatalog));
+      setReloadKey((value) => value + 1);
+      return true;
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar as garrafas.",
+      );
+      return false;
+    } finally {
+      setMutating("");
+    }
+  }
+
+  async function saveBottle(bottle: BottleProductSetting) {
+    const bottles = [...bottleCatalog.bottles];
+    const existingIndex = bottles.findIndex((item) => item.id === bottle.id);
+    if (existingIndex >= 0) bottles[existingIndex] = bottle;
+    else bottles.push(bottle);
+    if (await saveBottleProducts(bottles)) setBottleEditor(null);
+  }
+
+  async function toggleBottle(bottle: BottleProductSetting) {
+    await saveBottleProducts(
+      bottleCatalog.bottles.map((item) =>
+        item.id === bottle.id ? { ...item, enabled: !item.enabled } : item,
+      ),
+    );
+  }
+
+  async function archiveBottle(bottle: BottleProductSetting) {
+    if (!window.confirm(`Excluir “${bottle.name}” do catálogo?`)) return;
+    await saveBottleProducts(
+      bottleCatalog.bottles.filter((item) => item.id !== bottle.id),
+    );
+  }
+
   function openItemEditor(item?: CatalogItem) {
     setEditor({ type: "item", item });
   }
@@ -189,6 +306,7 @@ export function CatalogModule() {
   );
   const visibleCombos = catalog.combos;
   const visibleGourmets = catalog.gourmets;
+  const visibleBottles = bottleCatalog.bottles;
   const totalForTab =
     tab === "items"
       ? visibleItems.length
@@ -196,7 +314,7 @@ export function CatalogModule() {
         ? visibleCombos.length
         : tab === "gourmet"
           ? visibleGourmets.length
-          : 0;
+          : visibleBottles.length;
   const pageCount = Math.max(1, Math.ceil(totalForTab / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
@@ -205,6 +323,7 @@ export function CatalogModule() {
   const paginatedItems = visibleItems.slice(pageStart, pageStart + pageSize);
   const paginatedCombos = visibleCombos.slice(pageStart, pageStart + pageSize);
   const paginatedGourmets = visibleGourmets.slice(pageStart, pageStart + pageSize);
+  const paginatedBottles = visibleBottles.slice(pageStart, pageStart + pageSize);
   const activeItemCount = catalog.items.filter(
     (item) => item.available && !item.deletedAt,
   ).length;
@@ -214,6 +333,7 @@ export function CatalogModule() {
   const activeGourmetCount = catalog.gourmets.filter(
     (gourmet) => gourmet.available && !gourmet.deletedAt,
   ).length;
+  const activeBottleCount = visibleBottles.filter((bottle) => bottle.enabled).length;
 
   return (
     <section
@@ -251,7 +371,7 @@ export function CatalogModule() {
               ["items", `Itens (${activeItemCount})`],
               ["combos", `Combos (${activeComboCount})`],
               ["gourmet", `Gourmets (${activeGourmetCount})`],
-              ["bottle", "Açaí na Garrafa"],
+              ["bottle", `Açaí na Garrafa (${activeBottleCount})`],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -307,25 +427,26 @@ export function CatalogModule() {
               ))}
             </select>
           </label>
-          {tab !== "bottle" && (
-            <button
-              type="button"
-              onClick={() => {
-                if (tab === "items") openItemEditor();
-                else if (tab === "combos") openComboEditor();
-                else openGourmetEditor();
-              }}
-              disabled={loading || Boolean(mutating)}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#8b1a2e] px-4 text-sm font-extrabold text-white hover:bg-[#6b1222] disabled:opacity-50"
-            >
-              <PlusIcon aria-hidden="true" size={17} />
-              {tab === "items"
-                ? "Adicionar item"
-                : tab === "gourmet"
-                  ? "Criar Gourmet"
+          <button
+            type="button"
+            onClick={() => {
+              if (tab === "items") openItemEditor();
+              else if (tab === "combos") openComboEditor();
+              else if (tab === "gourmet") openGourmetEditor();
+              else setBottleEditor({});
+            }}
+            disabled={loading || Boolean(mutating)}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#8b1a2e] px-4 text-sm font-extrabold text-white hover:bg-[#6b1222] disabled:opacity-50"
+          >
+            <PlusIcon aria-hidden="true" size={17} />
+            {tab === "items"
+              ? "Adicionar item"
+              : tab === "gourmet"
+                ? "Criar Gourmet"
+                : tab === "bottle"
+                  ? "Criar garrafa"
                   : "Criar combo"}
-            </button>
-          )}
+          </button>
         </div>
       </div>
 
@@ -545,14 +666,26 @@ export function CatalogModule() {
           onArchive={archiveGourmet}
         />
       ) : (
-        <BottleCatalogModule />
+        <BottleCatalogTable
+          bottles={paginatedBottles}
+          mutating={mutating}
+          onEdit={(bottle) => setBottleEditor({ bottle })}
+          onToggle={toggleBottle}
+          onArchive={archiveBottle}
+        />
       )}
 
       {!loading && totalForTab > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 py-4 text-sm text-[#68685f]">
           <p>
             Mostrando {firstVisibleEntry}–{lastVisibleEntry} de {totalForTab}{" "}
-            {tab === "items" ? "itens" : tab === "combos" ? "combos" : "Gourmets"}
+            {tab === "items"
+              ? "itens"
+              : tab === "combos"
+                ? "combos"
+                : tab === "bottle"
+                  ? "garrafas"
+                  : "Gourmets"}
           </p>
           <div className="flex gap-2">
             <button
@@ -602,6 +735,15 @@ export function CatalogModule() {
           }}
         />
       ) : null}
+      {bottleEditor && (
+        <BottleEditorDialog
+          key={bottleEditor.bottle?.id ?? "new-bottle"}
+          bottle={bottleEditor.bottle}
+          defaultExtras={bottleCatalog.extras}
+          onClose={() => setBottleEditor(null)}
+          onSave={saveBottle}
+        />
+      )}
     </section>
   );
 }
@@ -678,6 +820,106 @@ function GourmetCatalogTable({
                     </button>
                   </div>
                 )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BottleCatalogTable({
+  bottles,
+  mutating,
+  onEdit,
+  onToggle,
+  onArchive,
+}: {
+  bottles: BottleProductSetting[];
+  mutating: string;
+  onEdit: (bottle: BottleProductSetting) => void;
+  onToggle: (bottle: BottleProductSetting) => void;
+  onArchive: (bottle: BottleProductSetting) => void;
+}) {
+  if (!bottles.length) {
+    return (
+      <p className="mt-4 border border-dashed border-[#d6d6ce] bg-white px-5 py-12 text-center text-sm text-[#77776e]">
+        Nenhuma garrafa cadastrada.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 overflow-x-auto border border-[#deded7] bg-white">
+      <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+        <thead className="bg-[#f3f3ef] text-xs uppercase text-[#68685f]">
+          <tr>
+            <th scope="col" className="px-4 py-3 font-extrabold">Garrafa</th>
+            <th scope="col" className="px-4 py-3 font-extrabold">Tamanhos e preços</th>
+            <th scope="col" className="px-4 py-3 font-extrabold">Extras</th>
+            <th scope="col" className="px-4 py-3 font-extrabold">Disponibilidade</th>
+            <th scope="col" className="px-4 py-3 font-extrabold">Ações</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#e8e8e2]">
+          {bottles.map((bottle) => (
+            <tr key={bottle.id} className="align-top hover:bg-[#fcfcfa]">
+              <td className="px-4 py-3">
+                <p className="font-semibold">{bottle.name}</p>
+              </td>
+              <td className="px-4 py-3 text-xs">
+                {bottle.available300 && (
+                  <p className="mb-1 last:mb-0">
+                    300 ml: {currency.format(bottle.price300Cents / 100)}
+                  </p>
+                )}
+                {bottle.available500 && (
+                  <p className="mb-1 last:mb-0">
+                    500 ml: {currency.format(bottle.price500Cents / 100)}
+                  </p>
+                )}
+              </td>
+              <td className="max-w-sm px-4 py-3 text-xs text-[#55554e]">
+                {bottle.extras.filter((extra) => extra.enabled).map((extra) => extra.name).join(", ") || "Sem extras"}
+              </td>
+              <td className="px-4 py-3">
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${bottle.enabled ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                  {bottle.enabled ? "Ativo" : "Pausado"}
+                </span>
+              </td>
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={Boolean(mutating)}
+                    onClick={() => onEdit(bottle)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#8b1a2e] hover:underline disabled:opacity-50"
+                  >
+                    <PencilSimpleIcon aria-hidden="true" size={15} /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(mutating)}
+                    onClick={() => void onToggle(bottle)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#55554e] hover:underline disabled:opacity-50"
+                  >
+                    {bottle.enabled ? (
+                      <PauseIcon aria-hidden="true" size={15} />
+                    ) : (
+                      <PlayIcon aria-hidden="true" size={15} />
+                    )}
+                    {bottle.enabled ? "Pausar" : "Reativar"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(mutating)}
+                    onClick={() => void onArchive(bottle)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-red-800 hover:underline disabled:opacity-50"
+                  >
+                    <ArchiveBoxIcon aria-hidden="true" size={15} /> Excluir
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
