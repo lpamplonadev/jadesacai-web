@@ -41,6 +41,7 @@ export type OrderPayload = {
     neighborhood?: string;
     complement?: string;
     reference?: string;
+    deliveryFeeCents?: number;
   };
   payment?: {
     method?: string;

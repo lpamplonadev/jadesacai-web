@@ -1,6 +1,6 @@
 "use client";
 
-import { XIcon } from "@phosphor-icons/react";
+import { PrinterIcon, XIcon } from "@phosphor-icons/react";
 import {
   useEffect,
   useRef,
@@ -28,6 +28,7 @@ import {
   formatOrderNumber,
 } from "@/features/admin/application/order-formatting";
 import { requestAdminApi } from "@/features/admin/infrastructure/admin-api";
+import { printOrderReceipt } from "@/features/admin/application/order-receipt";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -103,6 +104,8 @@ export function OrderDetailsDialog({
   const payment = payload.payment;
   const choiceCatalog = [
     ...catalogItems,
+    { id: "bottle-300", name: "300 ml" },
+    { id: "bottle-500", name: "500 ml" },
     ...flavors,
     ...cupSizes,
     ...toppings,
@@ -201,6 +204,55 @@ export function OrderDetailsDialog({
     "Não informado";
   const changeFor = payment?.changeForCents;
 
+  function printOrder() {
+    const optional = (label: string, value: string) =>
+      value === "Nenhum" || value === "Não selecionado" ? [] : [`${label}: ${value}`];
+    const address = [
+      [delivery?.street, delivery?.number].filter(Boolean).join(", "),
+      delivery?.complement,
+      delivery?.neighborhood,
+      delivery?.postalCode ? `CEP ${delivery.postalCode}` : "",
+      delivery?.reference ? `Ref.: ${delivery.reference}` : "",
+    ].filter((line): line is string => Boolean(line));
+    const deliveryFee = delivery?.deliveryFeeCents;
+
+    printOrderReceipt({
+      orderNumber: formatOrderNumber(order.orderNumber),
+      dateTime: `${new Date(`${order.orderDate}T12:00:00`).toLocaleDateString("pt-BR")} ${new Date(
+        order.createdAt,
+      ).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      })}`,
+      customerName: payload.customer?.name ?? order.customerName,
+      customerPhone: payload.customer?.phone ?? order.customerPhone,
+      items: orderItems.map((item) => ({
+        name: item.name,
+        subtotal: currency.format(item.estimatedSubtotalCents / 100),
+        details: [
+          ...optional("Sabor", choiceName(choiceCatalog, item.acai.flavorId)),
+          ...optional("Tam.", choiceName(choiceCatalog, item.acai.sizeId)),
+          ...(item.acai.sauceId === "none"
+            ? ["Sem calda"]
+            : optional("Calda", choiceName(choiceCatalog, item.acai.sauceId))),
+          ...optional("Acomp.", choiceNames(choiceCatalog, item.acai.toppingIds)),
+          ...optional("Frutas", choiceNames(choiceCatalog, item.acai.fruitIds)),
+          ...optional("Extras", choiceNames(choiceCatalog, item.acai.extraIds)),
+        ],
+      })),
+      deliveryFee: deliveryFee ? currency.format(deliveryFee / 100) : undefined,
+      total: currency.format(order.estimatedTotalCents / 100),
+      payment: paymentMethod,
+      change:
+        payment?.needsChange && changeFor
+          ? `Troco para ${currency.format(changeFor / 100)}`
+          : undefined,
+      address,
+      notes: payload.notes,
+    });
+  }
+
   return (
     <dialog
       ref={dialogRef}
@@ -232,14 +284,24 @@ export function OrderDetailsDialog({
             })}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Fechar detalhes do pedido"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#68685f] transition-colors hover:bg-[#f3f3ef] hover:text-[#8b1a2e]"
-        >
-          <XIcon aria-hidden="true" size={20} />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={printOrder}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[#8b1a2e] px-3 text-sm font-bold text-[#8b1a2e] transition-colors hover:bg-[#fbf2f3]"
+          >
+            <PrinterIcon aria-hidden="true" size={18} />
+            Imprimir
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar detalhes do pedido"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[#68685f] transition-colors hover:bg-[#f3f3ef] hover:text-[#8b1a2e]"
+          >
+            <XIcon aria-hidden="true" size={20} />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-6 px-5 py-6 sm:px-7">
