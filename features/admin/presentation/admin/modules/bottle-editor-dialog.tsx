@@ -73,7 +73,7 @@ export function BottleEditorDialog({
       price: toPriceInput(extra.priceCents),
     })),
   );
-  const [enabled, setEnabled] = useState(bottle?.enabled ?? false);
+  const [enabled, setEnabled] = useState(bottle?.enabled ?? true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

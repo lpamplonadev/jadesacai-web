@@ -114,14 +114,18 @@ export function ProductCatalog({
         ? bottle.extras
         : bottleCatalog.extras
       ).filter((extra) => extra.enabled);
+      const findSizeId = (ml: number) =>
+        catalog.cupSizes.find(
+          (size) => size.name.replace(/\s+/g, "").toLowerCase() === `${ml}ml`,
+        )?.id ?? "";
       const bottleSizes: MenuGourmetSize[] = [
         {
-          sizeId: catalog.cupSizes.find((size) => size.name === "300 ml")?.id ?? "",
+          sizeId: findSizeId(300),
           size: "300 ml",
           priceCents: bottle.available300 ? bottle.price300Cents : 0,
         },
         {
-          sizeId: catalog.cupSizes.find((size) => size.name === "500 ml")?.id ?? "",
+          sizeId: findSizeId(500),
           size: "500 ml",
           priceCents: bottle.available500 ? bottle.price500Cents : 0,
         },

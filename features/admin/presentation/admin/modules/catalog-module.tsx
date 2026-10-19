@@ -666,6 +666,21 @@ export function CatalogModule() {
           onArchive={archiveGourmet}
         />
       ) : (
+        <>
+          {!["300ml", "500ml"].every((ml) =>
+            catalog.items.some(
+              (item) =>
+                item.kind === "size" &&
+                item.available &&
+                !item.deletedAt &&
+                item.name.replace(/\s+/g, "").toLowerCase() === ml,
+            ),
+          ) && (
+            <p className="mt-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              As garrafas só aparecem na loja se existirem os itens de tamanho
+              “300 ml” e “500 ml” ativos na aba Itens.
+            </p>
+          )}
         <BottleCatalogTable
           bottles={paginatedBottles}
           mutating={mutating}
@@ -673,6 +688,7 @@ export function CatalogModule() {
           onToggle={toggleBottle}
           onArchive={archiveBottle}
         />
+        </>
       )}
 
       {!loading && totalForTab > 0 && (
