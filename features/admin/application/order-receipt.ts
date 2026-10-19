@@ -56,7 +56,7 @@ export function buildOrderReceiptHtml(receipt: OrderReceipt) {
     .map(
       (item, index) => `
         <div class="row strong"><span>${index + 1}. ${e(item.name)}</span><span class="value">${e(item.subtotal)}</span></div>
-        ${item.details.map((detail) => `<p class="detail${detail.startsWith("- ") ? " item" : ""}">${e(detail)}</p>`).join("")}`,
+        ${item.details.map((detail) => `<p class="detail${detail.startsWith("º ") ? " item" : ""}">${e(detail)}</p>`).join("")}`,
     )
     .join('<div class="sep"></div>');
 
