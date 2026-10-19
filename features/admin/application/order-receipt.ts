@@ -43,6 +43,7 @@ const receiptStyles = `
   .row { display: flex; justify-content: space-between; gap: 6px; }
   .row .value { flex-shrink: 0; text-align: right; }
   .detail { padding-left: 8px; }
+  .detail.item { padding-left: 16px; }
   .total { font-size: 14px; font-weight: 700; }
   p { margin: 0; }
 `;
@@ -53,7 +54,7 @@ export function buildOrderReceiptHtml(receipt: OrderReceipt) {
     .map(
       (item, index) => `
         <div class="row strong"><span>${index + 1}. ${e(item.name)}</span><span class="value">${e(item.subtotal)}</span></div>
-        ${item.details.map((detail) => `<p class="detail">${e(detail)}</p>`).join("")}`,
+        ${item.details.map((detail) => `<p class="detail${detail.startsWith("º ") ? " item" : ""}">${e(detail)}</p>`).join("")}`,
     )
     .join('<div class="sep"></div>');
 

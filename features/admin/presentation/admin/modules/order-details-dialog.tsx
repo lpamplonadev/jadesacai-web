@@ -207,6 +207,10 @@ export function OrderDetailsDialog({
   function printOrder() {
     const optional = (label: string, value: string) =>
       value === "Nenhum" || value === "Não selecionado" ? [] : [`${label}: ${value}`];
+    const list = (label: string, ids: string[] | undefined) =>
+      ids?.length
+        ? [`${label}:`, ...ids.map((id) => `º ${choiceName(choiceCatalog, id)}`)]
+        : [];
     const address = [
       [delivery?.street, delivery?.number].filter(Boolean).join(", "),
       delivery?.complement,
@@ -236,9 +240,9 @@ export function OrderDetailsDialog({
           ...(item.acai.sauceId === "none"
             ? ["Sem calda"]
             : optional("Calda", choiceName(choiceCatalog, item.acai.sauceId))),
-          ...optional("Acomp.", choiceNames(choiceCatalog, item.acai.toppingIds)),
-          ...optional("Frutas", choiceNames(choiceCatalog, item.acai.fruitIds)),
-          ...optional("Extras", choiceNames(choiceCatalog, item.acai.extraIds)),
+          ...list("Acomp.", item.acai.toppingIds),
+          ...list("Frutas", item.acai.fruitIds),
+          ...list("Extras", item.acai.extraIds),
         ],
       })),
       deliveryFee: deliveryFee ? currency.format(deliveryFee / 100) : undefined,
